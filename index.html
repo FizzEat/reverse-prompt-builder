@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>反向提示词构建器</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0e1014;
+    color: #e8eaf0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 22px;
+    background: rgba(14, 16, 20, .88);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #232836;
+  }
+  h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .5px; }
+  .subtitle { margin: 2px 0 0; color: #8b93a3; font-size: 12.5px; }
+  .version-label { display: flex; align-items: center; gap: 8px; color: #8b93a3; font-size: 13px; white-space: nowrap; }
+  select {
+    background: #161922;
+    color: #e8eaf0;
+    border: 1px solid #2a2f3a;
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+  select:focus { outline: none; border-color: #7c9eff; }
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 20px;
+    align-items: start;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .left { display: flex; flex-direction: column; gap: 18px; }
+  .sys-section {
+    background: #161922;
+    border: 1px solid #232836;
+    border-radius: 12px;
+    padding: 14px 16px 16px;
+  }
+  .sys-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    border-bottom: 1px solid #232836;
+    padding-bottom: 8px;
+  }
+  .sys-name { font-weight: 600; font-size: 14px; }
+  .sys-q { color: #8b93a3; font-size: 12.5px; }
+  .sys-note { color: #6b7280; font-size: 12px; margin: 6px 0 0; }
+  .field { margin-top: 12px; }
+  .field-name { display: block; font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .field-desc { margin: 0 0 6px; color: #8b93a3; font-size: 12px; }
+  .level-input {
+    width: 100%;
+    background: #12151c;
+    border: 1px solid #2a2f3a;
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: #e8eaf0;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .level-input:focus { outline: none; border-color: #7c9eff; box-shadow: 0 0 0 3px rgba(124, 158, 255, .12); }
+  .level-input::placeholder { color: #59616f; }
+  .right { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 76px; }
+  .card {
+    background: #161922;
+    border: 1px solid #232836;
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .card-head h2 { font-size: 13.5px; margin: 0; font-weight: 600; letter-spacing: .5px; color: #c6ccd8; }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid #2a2f3a;
+    color: #c6ccd8;
+    border-radius: 7px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .copy-btn:hover:not(:disabled) { border-color: #7c9eff; color: #7c9eff; }
+  .copy-btn:disabled { opacity: .35; cursor: default; }
+  .copy-btn.ok { border-color: #4ade80; color: #4ade80; }
+  .output {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "PingFang SC", monospace;
+    font-size: 12.5px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 110px;
+    color: #dbe2ee;
+  }
+  .output.empty { color: #59616f; font-family: inherit; }
+  .card-foot {
+    margin-top: 8px;
+    border-top: 1px solid #232836;
+    padding-top: 8px;
+    color: #8b93a3;
+    font-size: 11.5px;
+  }
+  .footer-note { text-align: center; color: #59616f; font-size: 12px; padding: 8px 0 28px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>反向提示词构建器</h1>
+    <p class="subtitle">按四大系统逐层填写，右侧实时拼接成完整的英文正向提示词</p>
+  </div>
+  <label class="version-label">版本
+    <select id="versionSelect">
+      <option value="basic">基础版（5 层）</option>
+      <option value="intermediate" selected>进阶版（8 层）</option>
+      <option value="advanced">高级版（17 层）</option>
+    </select>
+  </label>
+</header>
+<main>
+  <section class="left" id="fieldsPanel" aria-label="输入层级"></section>
+  <section class="right">
+    <div class="card">
+      <div class="card-head"><h2>正向提示词</h2><button class="copy-btn" id="copyPos">复制</button></div>
+      <div class="output empty" id="posOutput"></div>
+      <div class="card-foot" id="posStats"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>负面约束</h2><button class="copy-btn" id="copyNeg">复制</button></div>
+      <div class="output empty" id="negOutput"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>模型参数</h2><button class="copy-btn" id="copyParam">复制</button></div>
+      <div class="output empty" id="paramOutput"></div>
+    </div>
+  </section>
+</main>
+<p class="footer-note">层写得越多，模型自由发挥的空间越小。</p>
+<script>
+"use strict";
+
+const LEVELS = [
+  { id: "l1",  system: "identity", name: "主体身份层",       desc: "人数、性别、年龄、物种、职业、发型、发色、脸型、眼睛、五官、体型、标志性特征", placeholder: "adult woman, short dusty pink bob haircut, large vivid light green almond-shaped eyes, round metal glasses" },
+  { id: "l2",  system: "identity", name: "身份锚点层",       desc: "跨图保持同一角色的面部一致性，真人转漫画、角色重绘时特别重要", placeholder: "preserve identity, high facial resemblance, same face shape, same hairstyle, same eye shape, do not redesign the face" },
+  { id: "l3",  system: "identity", name: "装饰与局部锚点层", desc: "角色的视觉记忆点：眼镜、痣、纹身、耳环、项链、角、尾巴、武器、帽子、制服标志", placeholder: "pink butterflies near the hair, pearl chain necklace with teardrop pendant, bridal veil" },
+  { id: "l4",  system: "physics",  name: "身体比例层",       desc: "控制人体整体形态，防止模型把所有角色画成平均身材", placeholder: "broad shoulders, strong upper torso, narrow waist, expanded ribcage, dramatically exaggerated manga proportions, stylized heroic anatomy" },
+  { id: "l5",  system: "physics",  name: "服装结构层",       desc: "让衣服不随姿势乱变：类型、颜色、领口、袖型、长度、贴身程度、装饰、布料受力", placeholder: "white off-shoulder bridal gown, deep sweetheart neckline, fitted bodice, smooth satin skirt, fabric stretched around the torso, natural folds around the waist" },
+  { id: "l6",  system: "physics",  name: "姿势结构层",       desc: "用力学关系描述动作：支撑点、重心、骨盆朝向、胸廓朝向、脊柱曲线、四肢位置、头部朝向", placeholder: "both hands and knees supporting the body, weight shifted toward the hands, ribcage leaning forward and downward, pelvis remaining higher behind, natural lumbar curve" },
+  { id: "l7",  system: "physics",  name: "材质层",           desc: "控制物体表面在光线下的视觉质感，最好配合光线一起写", placeholder: "soft reflective highlights on satin, subtle specular highlights on skin, metal armor catching warm rim light" },
+  { id: "l8",  system: "camera",   name: "镜头与透视层",     desc: "相机机位、朝向、距离、焦段、透视放大关系和画面裁切", placeholder: "very close high-angle three-quarter view, camera slightly above and in front-left, strong close-range wide-angle perspective, face enlarged by perspective" },
+  { id: "l9",  system: "camera",   name: "构图层",           desc: "人物在画面中的位置与占比。镜头写相机属性，构图写画面内安排", placeholder: "asymmetrical dynamic composition, head slightly tilted, upper body enlarged, large subject filling the frame, minimal negative space" },
+  { id: "l10", system: "camera",   name: "场景层",           desc: "背景里能看到什么，拆成具体可见元素，减少场景趋同", placeholder: "crosswalk, traffic island, shadows from elevated highway, tree shadows on pavement, convenience store entrance with warm light" },
+  { id: "l11", system: "camera",   name: "灯光层",           desc: "光线来源、方向、质感、色温：主光、辅光、轮廓光", placeholder: "warm bedside lamp as key light, faint cool window light as rim light, soft shadows, warm color temperature" },
+  { id: "l12", system: "camera",   name: "色彩层",           desc: "统一整体色调，保证系列图色彩一致", placeholder: "pastel pink, pale cyan, pearl white, soft skin tones" },
+  { id: "l13", system: "style",    name: "风格层",           desc: "整体视觉语言，放在主体、构图、镜头之后写", placeholder: "Japanese anime illustration" },
+  { id: "l14", system: "style",    name: "线稿与渲染层",     desc: "线稿粗细、着色方式、阴影类型、高光处理", placeholder: "bold black outer contour, clean anime lineart, polished cel shading, soft gradient shadows, subtle skin highlights" },
+  { id: "l15", system: "style",    name: "轮廓和贴纸层",     desc: "贴纸、头像、表情包场景：die-cut 白边、贴纸描边、背景隔离", placeholder: "thick white die-cut sticker border, thin black outer sticker contour, isolated character, pure white background" },
+  { id: "l16", system: "control",  name: "负面提示词层",     desc: "排除模型最容易走的捷径，每一条对应一个实际跑偏问题", placeholder: "front-facing symmetrical composition, centered static pose, excessive lace, hands holding skirt, normal perspective, distant camera", control: true },
+  { id: "l17", system: "control",  name: "参数层",           desc: "比例、风格强度、随机性，例如 Midjourney 参数", placeholder: "--ar 9:16 --style raw --stylize 100 --chaos 3", control: true }
+];
+
+const SYSTEMS = [
+  { key: "identity", name: "身份系统",     q: "画面里是谁" },
+  { key: "physics",  name: "物理系统",     q: "身体和衣服怎么存在于空间中" },
+  { key: "camera",   name: "摄影系统",     q: "相机在哪里、怎么拍" },
+  { key: "style",    name: "视觉风格系统", q: "用什么画法画" },
+  { key: "control",  name: "控制系统",     q: "告诉模型不要做什么、用什么参数跑",
+    note: "不描述画面本身，不参与正向提示词拼接，内容输出到右侧独立区块" }
+];
+
+const ALL_IDS = LEVELS.map(function (l) { return l.id; });
+
+const VERSIONS = {
+  basic:        ALL_IDS.filter(function (id) { return ["l1", "l5", "l6", "l10", "l13"].indexOf(id) !== -1; }),
+  intermediate: ALL_IDS.filter(function (id) { return ["l1", "l4", "l5", "l6", "l8", "l9", "l11", "l13"].indexOf(id) !== -1; }),
+  advanced:     ALL_IDS
+};
+
+const versionSelect = document.getElementById("versionSelect");
+const fieldsPanel = document.getElementById("fieldsPanel");
+const posOutput = document.getElementById("posOutput");
+const negOutput = document.getElementById("negOutput");
+const paramOutput = document.getElementById("paramOutput");
+const posStats = document.getElementById("posStats");
+const copyPos = document.getElementById("copyPos");
+const copyNeg = document.getElementById("copyNeg");
+const copyParam = document.getElementById("copyParam");
+
+const fieldEls = {};
+
+SYSTEMS.forEach(function (sys) {
+  const section = document.createElement("section");
+  section.className = "sys-section";
+
+  const head = document.createElement("div");
+  head.className = "sys-head";
+  const nameEl = document.createElement("span");
+  nameEl.className = "sys-name";
+  nameEl.textContent = sys.name;
+  const qEl = document.createElement("span");
+  qEl.className = "sys-q";
+  qEl.textContent = sys.q;
+  head.appendChild(nameEl);
+  head.appendChild(qEl);
+  section.appendChild(head);
+
+  if (sys.note) {
+    const noteEl = document.createElement("p");
+    noteEl.className = "sys-note";
+    noteEl.textContent = sys.note;
+    section.appendChild(noteEl);
+  }
+
+  LEVELS.filter(function (l) { return l.system === sys.key; }).forEach(function (level) {
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+
+    const label = document.createElement("label");
+    label.className = "field-name";
+    label.textContent = level.name;
+    label.setAttribute("for", "input-" + level.id);
+
+    const desc = document.createElement("p");
+    desc.className = "field-desc";
+    desc.textContent = level.desc;
+
+    const input = document.createElement("input");
+    input.id = "input-" + level.id;
+    input.type = "text";
+    input.className = "level-input";
+    input.placeholder = level.placeholder;
+    input.addEventListener("input", updateOutputs);
+
+    wrap.appendChild(label);
+    wrap.appendChild(desc);
+    wrap.appendChild(input);
+    section.appendChild(wrap);
+
+    fieldEls[level.id] = { section: section, wrap: wrap, input: input };
+  });
+
+  fieldsPanel.appendChild(section);
+});
+
+function updateVisibility() {
+  const visibleIds = VERSIONS[versionSelect.value];
+  SYSTEMS.forEach(function (sys) {
+    const inSection = LEVELS.filter(function (l) {
+      return l.system === sys.key && visibleIds.indexOf(l.id) !== -1;
+    });
+    const section = document.querySelectorAll(".sys-section")[SYSTEMS.indexOf(sys)];
+    section.style.display = inSection.length ? "" : "none";
+  });
+  LEVELS.forEach(function (level) {
+    fieldEls[level.id].wrap.style.display = visibleIds.indexOf(level.id) !== -1 ? "" : "none";
+  });
+}
+
+function updateOutputs() {
+  const visibleIds = VERSIONS[versionSelect.value];
+
+  const parts = [];
+  LEVELS.forEach(function (level) {
+    if (level.control) return;
+    if (visibleIds.indexOf(level.id) === -1) return;
+    const value = fieldEls[level.id].input.value.trim();
+    if (value) parts.push(value);
+  });
+  const prompt = parts.join(", ");
+
+  posOutput.textContent = prompt || "填写左侧字段后，这里会实时生成完整的英文正向提示词";
+  posOutput.classList.toggle("empty", !prompt);
+  copyPos.disabled = !prompt;
+
+  const filledCount = parts.length;
+  posStats.textContent = "已填 " + filledCount + "/" + visibleIds.length + " 层，共 " + prompt.length + " 字符";
+
+  const negValue = fieldEls.l16.input.value.trim();
+  const negVisible = visibleIds.indexOf("l16") !== -1;
+  negOutput.textContent = negValue || (negVisible ? "留空即可，模型将使用默认行为" : "切换到高级版可填写负面约束");
+  negOutput.classList.toggle("empty", !negValue);
+  copyNeg.disabled = !negValue;
+
+  const paramValue = fieldEls.l17.input.value.trim();
+  const paramVisible = visibleIds.indexOf("l17") !== -1;
+  paramOutput.textContent = paramValue || (paramVisible ? "留空即可，使用模型默认参数" : "切换到高级版可填写模型参数");
+  paramOutput.classList.toggle("empty", !paramValue);
+  copyParam.disabled = !paramValue;
+}
+
+function copyText(text, btn) {
+  const done = function () {
+    const original = btn.textContent;
+    btn.textContent = "已复制";
+    btn.classList.add("ok");
+    setTimeout(function () {
+      btn.textContent = original;
+      btn.classList.remove("ok");
+    }, 1400);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(function () {
+      fallbackCopy(text);
+      done();
+    });
+  } else {
+    fallbackCopy(text);
+    done();
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* 忽略 */ }
+  ta.remove();
+}
+
+copyPos.addEventListener("click", function () { copyText(posOutput.textContent, copyPos); });
+copyNeg.addEventListener("click", function () { copyText(fieldEls.l16.input.value.trim(), copyNeg); });
+copyParam.addEventListener("click", function () { copyText(fieldEls.l17.input.value.trim(), copyParam); });
+
+versionSelect.addEventListener("change", function () {
+  updateVisibility();
+  updateOutputs();
+});
+
+updateVisibility();
+updateOutputs();
+</script>
+</body>
+</html>
